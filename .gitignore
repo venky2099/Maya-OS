@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+*.pyo
+logs/maya_os_execution.log
