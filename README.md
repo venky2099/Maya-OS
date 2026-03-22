@@ -2,7 +2,7 @@
 ### An Affective Spiking Neural Network as a Conversational OS Arbitration Layer
 
 **Venkatesh Swaminathan** — Nexus Learning Labs / BITS Pilani, Bengaluru, India  
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19160123.svg)](https://doi.org/10.5281/zenodo.19160123)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19160123.svg)](https://doi.org/10.5281/zenodo.19160122)
 [![Python](https://img.shields.io/badge/python-3.11-blue.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%2011-lightgrey.svg)](https://microsoft.com)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -19,7 +19,7 @@ You talk to it. It responds by acting on your OS.
 
 This is the second paper in the Maya research series. The foundational SNN architecture is from:  
 **Swaminathan, V. (2026). Nociceptive Metaplasticity and Graceful Decay in SNNs.**  
-→ https://doi.org/10.5281/zenodo.19151563  
+→ https://doi.org/10.5281/zenodo.19151562  
 → https://github.com/venky2099/Maya-Nexus-Core
 
 ---
@@ -167,8 +167,8 @@ If you use Maya-OS in your research:
                Conversational Operating System Arbitration Layer},
   year      = {2026},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.19160123},
-  url       = {https://doi.org/10.5281/zenodo.19160123}
+  doi       = {10.5281/zenodo.19160122},
+  url       = {https://doi.org/10.5281/zenodo.19160122}
 }
 ```
 
@@ -181,8 +181,8 @@ If you use Maya-OS in your research:
                Neural Networks: Towards Survival-Driven Continual Learning},
   year      = {2026},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.19151563},
-  url       = {https://doi.org/10.5281/zenodo.19151563}
+  doi       = {10.5281/zenodo.19151562},
+  url       = {https://doi.org/10.5281/zenodo.19151562}
 }
 ```
 
