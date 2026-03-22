@@ -2,7 +2,7 @@
 ### An Affective Spiking Neural Network as a Conversational OS Arbitration Layer
 
 **Venkatesh Swaminathan** — Nexus Learning Labs / BITS Pilani, Bengaluru, India  
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19160123.svg)](https://doi.org/10.5281/zenodo.19160123)
 [![Python](https://img.shields.io/badge/python-3.11-blue.svg)](https://python.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%2011-lightgrey.svg)](https://microsoft.com)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -167,8 +167,8 @@ If you use Maya-OS in your research:
                Conversational Operating System Arbitration Layer},
   year      = {2026},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.XXXXXXX},
-  url       = {https://doi.org/10.5281/zenodo.XXXXXXX}
+  doi       = {10.5281/zenodo.19160123},
+  url       = {https://doi.org/10.5281/zenodo.19160123}
 }
 ```
 
