@@ -1,0 +1,10 @@
+timestamp,tick,bhaya,vairagya,shraddha,spanda,bhaya_fired,vairagya_fired,shraddha_fired,spanda_fired,cpu_percent,ram_percent,action_class,target_pid,target_name,intensity,execution_success,reason,intent_injected,session_id
+2026-03-22T12:33:17.041158,1,0.0914,0.3058,0.496,0.3411,0,0,0,0,2.0,57.6,IDLE,,,0.0,1,No action — system nominal,0,20260322_123316
+2026-03-22T12:33:18.592422,2,0.1626,0.0,0.0,0.0,0,1,1,1,0.0,57.6,IDLE,,,0.0,1,No action — system nominal,0,20260322_123316
+2026-03-22T12:33:19.195887,3,0.2471,0.3106,0.5,0.3787,0,0,0,0,7.1,57.6,PROTECT,10280,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 10280) marked trusted.,0,20260322_123316
+2026-03-22T12:33:20.747925,4,0.2923,0.0,0.0,0.0,0,1,1,1,0.0,57.6,IDLE,,,0.0,1,No action — system nominal,0,20260322_123316
+2026-03-22T12:33:21.352598,5,0.0,0.3295,0.519,0.3381,1,0,0,0,0.0,57.5,PROTECT,10280,python3.11.exe,0.519,1,[PROTECT] Shraddha=0.519 — python3.11.exe (PID 10280) marked trusted.,1,20260322_123316
+2026-03-22T12:33:22.886554,6,0.0992,0.0,0.0,0.0,0,1,1,1,5.2,57.5,IDLE,,,0.0,1,No action — system nominal,0,20260322_123316
+2026-03-22T12:33:23.489926,7,0.1765,0.325,0.5,0.3681,0,0,0,0,0.0,57.5,PROTECT,10280,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 10280) marked trusted.,0,20260322_123316
+2026-03-22T12:33:25.022414,8,0.259,0.0,0.0,0.0,0,1,1,1,10.3,57.5,IDLE,,,0.0,1,No action — system nominal,0,20260322_123316
+2026-03-22T12:33:25.628376,9,0.3121,0.323,0.5,0.3696,0,0,0,0,1.0,57.5,PROTECT,10280,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 10280) marked trusted.,0,20260322_123316

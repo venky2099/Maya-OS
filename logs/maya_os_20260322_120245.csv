@@ -1,0 +1,31 @@
+timestamp,tick,bhaya,vairagya,shraddha,spanda,bhaya_fired,vairagya_fired,shraddha_fired,spanda_fired,cpu_percent,ram_percent,action_class,target_pid,target_name,intensity,execution_success,reason,intent_injected,session_id
+2026-03-22T12:02:45.520644,1,0.1032,0.2976,0.4848,0.3495,0,0,0,0,7.6,56.1,IDLE,,,0.0,1,No action — system nominal,0,20260322_120245
+2026-03-22T12:02:47.055953,2,0.1726,0.0,0.0,0.0,0,1,1,1,1.0,56.1,IDLE,,,0.0,1,No action — system nominal,0,20260322_120245
+2026-03-22T12:02:47.660506,3,0.2512,0.3152,0.5,0.3775,0,0,0,0,6.3,56.1,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:02:49.227667,4,0.2988,0.0,0.0,0.0,0,1,1,1,2.1,56.1,IDLE,,,0.0,1,No action — system nominal,0,20260322_120245
+2026-03-22T12:02:49.832472,5,0.3479,0.322,0.5,0.3724,0,0,0,0,2.9,56.1,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:02:51.383532,6,0.3767,0.0,0.0,0.0,0,1,1,1,1.0,56.2,ALERT,17092,python3.11.exe,0.3767,1,[ALERT] Bhaya=0.377 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:02:52.913523,7,0.413,0.3218,0.5,0.3724,0,0,0,0,2.9,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:02:54.460794,8,0.4284,0.0,0.0,0.0,0,1,1,1,0.0,56.2,ALERT,17092,python3.11.exe,0.4284,1,[ALERT] Bhaya=0.428 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:02:55.992441,9,0.4656,0.3142,0.5,0.3781,0,0,0,0,6.7,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:02:57.523099,10,0.4723,0.0,0.0,0.0,0,1,1,1,0.0,56.2,ALERT,17092,python3.11.exe,0.4723,1,[ALERT] Bhaya=0.472 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:02:59.062980,11,0.4854,0.3276,0.5,0.3681,0,0,0,0,0.0,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:03:00.609326,12,0.4955,0.0,0.0,0.0,0,1,1,1,2.7,56.2,ALERT,17092,python3.11.exe,0.4955,1,[ALERT] Bhaya=0.495 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:03:02.144683,13,0.5047,0.3276,0.5,0.3681,0,0,0,0,0.0,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:03:03.691358,14,0.5119,0.0,0.0,0.0,0,1,1,1,2.8,56.2,ALERT,17092,python3.11.exe,0.5119,1,[ALERT] Bhaya=0.512 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:03:05.226528,15,0.5256,0.3218,0.5,0.3724,0,0,0,0,2.9,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:03:06.757789,16,0.5273,0.0,0.0,0.0,0,1,1,1,2.0,56.2,ALERT,17092,python3.11.exe,0.5273,1,[ALERT] Bhaya=0.527 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:03:08.273279,17,0.5312,0.3276,0.5,0.3681,0,0,0,0,0.0,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:03:09.808195,18,0.527,0.0,0.0,0.0,0,1,1,1,0.0,56.2,ALERT,17092,python3.11.exe,0.527,1,[ALERT] Bhaya=0.527 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:03:11.341955,19,0.531,0.3276,0.5,0.3681,0,0,0,0,0.0,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:03:12.863472,20,0.534,0.0,0.0,0.0,0,1,1,1,2.9,56.2,ALERT,17092,python3.11.exe,0.534,1,[ALERT] Bhaya=0.534 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:03:14.389994,21,0.5416,0.3238,0.5,0.3709,0,0,0,0,1.9,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:03:15.924586,22,0.5356,0.0,0.0,0.0,0,1,1,1,0.0,56.2,ALERT,17092,python3.11.exe,0.5356,1,[ALERT] Bhaya=0.536 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:03:17.447862,23,0.5381,0.3276,0.5,0.3681,0,0,0,0,0.0,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:03:18.980695,24,0.5698,0.0,0.0,0.0,0,1,1,1,14.8,56.2,ALERT,17092,python3.11.exe,0.5698,1,[ALERT] Bhaya=0.570 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:03:20.506611,25,0.5691,0.3256,0.5,0.3696,0,0,0,0,1.0,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:03:22.033028,26,0.587,0.0,0.0,0.0,0,1,1,1,11.4,56.2,ALERT,17092,python3.11.exe,0.587,1,[ALERT] Bhaya=0.587 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:03:23.550925,27,0.5903,0.3202,0.5,0.3736,0,0,0,0,3.7,56.2,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:03:25.112564,28,0.6417,0.0,0.0,0.0,0,1,1,1,26.2,56.2,ALERT,17092,python3.11.exe,0.6417,1,[ALERT] Bhaya=0.642 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
+2026-03-22T12:03:27.084543,29,0.6377,0.3186,0.5,0.3747,0,0,0,0,4.4,56.3,PROTECT,17092,python3.11.exe,0.5,1,[PROTECT] Shraddha=0.500 — python3.11.exe (PID 17092) marked trusted.,0,20260322_120245
+2026-03-22T12:03:28.659325,30,0.6184,0.0,0.0,0.0,0,1,1,1,1.0,56.3,ALERT,17092,python3.11.exe,0.6184,1,[ALERT] Bhaya=0.618 — monitoring python3.11.exe (PID 17092). No action yet.,0,20260322_120245
