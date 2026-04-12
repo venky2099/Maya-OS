@@ -1,3 +1,5 @@
+﻿import verify_provenance  # Maya Research Series -- Nexus Learning Labs, Bengaluru
+verify_provenance.stamp()  # logs canary + ORCID on every run
 """
 Maya-OS — Main Entry Point
 ==========================
