@@ -1,0 +1,18 @@
+﻿cff-version: 1.2.0
+title: "Maya-OS: Affective SNN as a Conversational OS Arbitration Layer"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Swaminathan
+    given-names: Venkatesh
+    orcid: "https://orcid.org/0000-0002-3315-7907"
+    affiliation: "Nexus Learning Labs, Bengaluru"
+repository-code: "https://github.com/venky2099/Maya-OS"
+doi: 10.5281/zenodo.19160123
+date-released: "2026-03-22"
+license: MIT
+keywords:
+  - affective computing
+  - spiking neural networks
+  - OS arbitration
+  - Maya Research Series
