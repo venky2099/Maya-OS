@@ -1,0 +1,1634 @@
+﻿
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\maya_os.py
+================================================================================
+import verify_provenance  # Maya Research Series -- Nexus Learning Labs, Bengaluru
+verify_provenance.stamp()  # logs canary + ORCID on every run
+"""
+Maya-OS — Main Entry Point
+==========================
+The HAL moment. You talk. She acts.
+
+Commands Maya understands:
+    "focus"          → Shraddha boost   (protect work processes)
+    "under attack"   → Bhaya spike      (trigger threat response)
+    "calm down"      → Vairagya boost   (force graceful state)
+    "stress test"    → Double-pump Bhaya, suppress Shraddha (forces KILL/SUSPEND)
+    "status"         → Print live state
+    "quit" / "exit"  → Shutdown Maya
+
+Maya runs her affective engine continuously in a background thread.
+Your commands inject directly into her voltage state.
+"""
+
+import time
+import threading
+import sys
+import os
+import random
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from MayaOS.core.affective_engine import AffectiveEngine
+from MayaOS.core.os_arbiter       import OSArbiter
+from MayaOS.core.syscall_executor import SyscallExecutor
+from MayaOS.logger.decision_log   import DecisionLogger
+from rich.console import Console
+from rich.panel   import Panel
+from rich.table   import Table
+from rich         import box
+
+console = Console()
+
+
+# ─── Intent Map ───────────────────────────────────────────────────────────────
+
+INTENT_MAP = {
+    # Threat / stress triggers
+    "attack":       {"bhaya": +0.35, "shraddha": -0.15},
+    "threat":       {"bhaya": +0.35, "shraddha": -0.15},
+    "danger":       {"bhaya": +0.30},
+    "emergency":    {"bhaya": +0.45, "shraddha": -0.20},
+    "kill":         {"bhaya": +0.40, "vairagya": -0.25, "shraddha": -0.20},
+
+    # Calm / focus triggers
+    "focus":        {"shraddha": +0.30, "bhaya": -0.10},
+    "working":      {"shraddha": +0.25, "spanda": +0.15},
+    "research":     {"shraddha": +0.30, "vairagya": +0.10},
+    "calm":         {"vairagya": +0.35, "bhaya": -0.20},
+    "relax":        {"vairagya": +0.30, "bhaya": -0.15},
+    "clean up":     {"vairagya": +0.45, "bhaya": -0.15},
+    "cleanup":      {"vairagya": +0.45, "bhaya": -0.15},
+
+    # Greetings
+    "hello":        {"spanda": +0.15, "shraddha": +0.10},
+    "good morning": {"spanda": +0.20, "shraddha": +0.15},
+}
+
+# Maya's spoken responses per action class
+MAYA_RESPONSES = {
+    "IDLE":    [
+        "All systems nominal. I am watching.",
+        "System state is calm. No action needed.",
+        "Voltages stable. Standing by.",
+    ],
+    "ALERT":   [
+        "Bhaya is rising. I am monitoring the threat.",
+        "Fear signal detected. Watching closely. Not acting yet.",
+        "Threat pattern forming. Shraddha is holding.",
+    ],
+    "PROTECT": [
+        "Trust is dominant. I am shielding this process.",
+        "Shraddha has fired. The process is protected.",
+        "I recognise this. It is safe. I will guard it.",
+    ],
+    "SUSPEND": [
+        "Wisdom moderates fear. Suspending gracefully.",
+        "Vairagya is present. I suspend, not destroy.",
+        "Fear acknowledged. Wisdom applied. Process suspended.",
+    ],
+    "KILL":    [
+        "Bhaya is unmoderated. Terminating.",
+        "Fear exceeds trust. No wisdom to temper it. Killing process.",
+        "Threat confirmed. Shraddha absent. Executing kill.",
+    ],
+    "CLEANUP": [
+        "Vairagya is high. The system is idle. Cleaning.",
+        "Wisdom pass initiated. Releasing dormant processes.",
+        "Graceful cleanup. Nothing is forced. Everything is released.",
+    ],
+}
+
+
+def maya_speak(action: str, target: str = None) -> str:
+    responses = MAYA_RESPONSES.get(action, ["..."])
+    line = random.choice(responses)
+    if target and action in ("SUSPEND", "KILL", "PROTECT", "ALERT"):
+        line += f" [{target}]"
+    return line
+
+
+# ─── Intent Parser ────────────────────────────────────────────────────────────
+
+def parse_intent(user_input: str) -> dict:
+    text = user_input.lower().strip()
+
+    if any(k in text for k in ("status", "how are you", "state")):
+        return {"_status": True}
+
+    # Stress test gets special handling — double pump
+    if "stress test" in text:
+        return {"_stress_test": True}
+
+    injection = {}
+    matched = False
+    for keyword, signals in INTENT_MAP.items():
+        if keyword in text and signals is not None:
+            for neuron, delta in signals.items():
+                injection[neuron] = injection.get(neuron, 0) + delta
+            matched = True
+
+    if not matched:
+        injection = {"spanda": +0.05}
+
+    return injection
+
+
+# ─── Maya OS Core ─────────────────────────────────────────────────────────────
+
+class MayaOS:
+
+    def __init__(self, dry_run: bool = True):
+        self.engine   = AffectiveEngine()
+        self.arbiter  = OSArbiter()
+        self.executor = SyscallExecutor(dry_run=dry_run)
+        self.logger   = DecisionLogger(log_dir="MayaOS/logs")
+        self.running  = False
+        self.dry_run  = dry_run
+        self.tick_count        = 0
+        self.last_state        = None
+        self.last_decision     = None
+        self.last_result       = None
+        self._intent_this_tick = False          # ← always initialised here
+        self._lock = threading.Lock()
+
+    def _background_tick(self):
+        """Continuous engine loop in background thread."""
+        while self.running:
+            with self._lock:
+                state    = self.engine.tick_update()
+                decision = self.arbiter.evaluate(state)
+                result   = self.executor.execute(decision)
+
+                intent_flag            = self._intent_this_tick
+                self._intent_this_tick = False   # reset after consuming
+
+                self.logger.log(state, decision, result,
+                                intent_injected=intent_flag)
+                self.last_state    = state
+                self.last_decision = decision
+                self.last_result   = result
+                self.tick_count   += 1
+            time.sleep(0.5)
+
+    def start(self):
+        self.running = True
+        self.thread  = threading.Thread(target=self._background_tick,
+                                        daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.running = False
+
+    def inject(self, signals: dict):
+        """Inject intent signals directly into engine voltages."""
+        with self._lock:
+            self.engine.inject_intent(signals)
+            self._intent_this_tick = True
+
+    def stress_test(self):
+        with self._lock:
+            self.engine.neurons["bhaya"].voltage = 0.85
+            self.engine.neurons["shraddha"].voltage = 0.02
+            self.engine.neurons["vairagya"].voltage = 0.02
+            self.engine._freeze_synapses = True  # block weight matrix for one tick
+            self._intent_this_tick = True
+        time.sleep(0.7)
+
+    def get_status(self) -> dict:
+        with self._lock:
+            if self.last_state is None:
+                return {}
+            return {
+                "tick":     self.last_state["tick"],
+                "voltages": self.last_state["voltages"],
+                "fired":    self.last_state["fired"],
+                "action":   self.last_decision.action.value
+                            if self.last_decision else "—",
+                "target":   self.last_decision.target_name
+                            if self.last_decision else "—",
+                "intensity":self.last_decision.intensity
+                            if self.last_decision else 0.0,
+                "cpu":      self.last_state["cpu"] * 100,
+                "ram":      self.last_state["ram"] * 100,
+            }
+
+    def print_status(self):
+        s = self.get_status()
+        if not s:
+            console.print("[dim]No state yet...[/dim]")
+            return
+        v  = s["voltages"]
+        fr = s["fired"]
+
+        def fired_marker(name):
+            return "[bold yellow]⚡FIRED[/bold yellow]" if fr.get(name) else ""
+
+        table = Table(box=box.SIMPLE, show_header=False)
+        table.add_column("Key",   style="dim",   width=14)
+        table.add_column("Value", style="white", width=36)
+
+        table.add_row("Tick",      str(s["tick"]))
+        table.add_row("Bhaya",
+            f"[red]{v['bhaya']:.4f}[/red]  {fired_marker('bhaya')}")
+        table.add_row("Vairagya",
+            f"[cyan]{v['vairagya']:.4f}[/cyan]  {fired_marker('vairagya')}")
+        table.add_row("Shraddha",
+            f"[green]{v['shraddha']:.4f}[/green]  {fired_marker('shraddha')}")
+        table.add_row("Spanda",
+            f"[yellow]{v['spanda']:.4f}[/yellow]  {fired_marker('spanda')}")
+        table.add_row("Action",    f"[bold]{s['action']}[/bold]")
+        table.add_row("Target",    s["target"] or "—")
+        table.add_row("Intensity", f"{s['intensity']:.4f}")
+        table.add_row("CPU",       f"{s['cpu']:.1f}%")
+        table.add_row("RAM",       f"{s['ram']:.1f}%")
+
+        console.print(Panel(table,
+            title="[bold cyan]Maya Status[/bold cyan]",
+            border_style="cyan", width=54))
+
+
+# ─── Entry Point ──────────────────────────────────────────────────────────────
+
+def main():
+    console.print(Panel(
+        "[bold cyan]Maya-OS[/bold cyan]\n"
+        "[dim]Affective Neuromorphic Operating System[/dim]\n\n"
+        "[white]Swaminathan, V. (2026)[/white]\n"
+        "[dim]Nexus Learning Labs / BITS Pilani[/dim]\n\n"
+        "[yellow]Commands: hello · focus · stress test · calm down\n"
+        "          clean up · status · quit[/yellow]",
+        title="[bold]Initialising[/bold]",
+        border_style="cyan",
+        width=60
+    ))
+
+    dry = "--live" not in sys.argv
+    if not dry:
+        console.print("[bold red]⚠  LIVE MODE — real OS actions will execute[/bold red]")
+    else:
+        console.print("[bold yellow]DRY-RUN MODE — no real OS actions[/bold yellow]\n")
+
+    maya = MayaOS(dry_run=dry)
+    maya.start()
+
+    time.sleep(1.5)
+    console.print("[bold green]Maya is awake.[/bold green]\n")
+
+    while True:
+        try:
+            user_input = input("[You] → ").strip()
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if not user_input:
+            continue
+
+        if user_input.lower() in ("quit", "exit", "bye", "shutdown"):
+            console.print(
+                "\n[cyan]Maya: Understood. Initiating graceful shutdown.[/cyan]")
+            break
+
+        intent = parse_intent(user_input)
+
+        # ── Status ────────────────────────────────────────────────────────────
+        if intent.get("_status"):
+            maya.print_status()
+            continue
+
+        # ── Stress Test (special double-pump) ─────────────────────────────────
+        if intent.get("_stress_test"):
+            maya.stress_test()
+            s = maya.get_status()
+            if s:
+                action   = s["action"]
+                target   = s["target"]
+                response = maya_speak(action, target)
+                ACTION_COLOR = {
+                    "IDLE":    "dim white",
+                    "ALERT":   "yellow",
+                    "SUSPEND": "orange3",
+                    "KILL":    "bold red",
+                    "PROTECT": "bold green",
+                    "CLEANUP": "cyan",
+                }
+                color = ACTION_COLOR.get(action, "white")
+                v = s["voltages"]
+                console.print(
+                    f"[cyan]Maya:[/cyan] {response}\n"
+                    f"       [dim]B={v['bhaya']:.3f} "
+                    f"V={v['vairagya']:.3f} "
+                    f"S={v['shraddha']:.3f} "
+                    f"Sp={v['spanda']:.3f} → "
+                    f"[{color}]{action}[/{color}][/dim]"
+                )
+            continue
+
+        # ── Normal Intent ─────────────────────────────────────────────────────
+        maya.inject(intent)
+        time.sleep(0.6)
+
+        s = maya.get_status()
+        if s:
+            action   = s["action"]
+            target   = s["target"]
+            response = maya_speak(action, target)
+            ACTION_COLOR = {
+                "IDLE":    "dim white",
+                "ALERT":   "yellow",
+                "SUSPEND": "orange3",
+                "KILL":    "bold red",
+                "PROTECT": "bold green",
+                "CLEANUP": "cyan",
+            }
+            color = ACTION_COLOR.get(action, "white")
+            v = s["voltages"]
+            console.print(
+                f"[cyan]Maya:[/cyan] {response}\n"
+                f"       [dim]B={v['bhaya']:.3f} "
+                f"V={v['vairagya']:.3f} "
+                f"S={v['shraddha']:.3f} "
+                f"Sp={v['spanda']:.3f} → "
+                f"[{color}]{action}[/{color}][/dim]"
+            )
+
+    maya.stop()
+    summary = maya.logger.summary()
+    console.print(
+        f"\n[dim]Session complete. "
+        f"{summary['total_ticks']} ticks logged.[/dim]")
+    console.print(f"[dim]Actions: {summary['actions']}[/dim]")
+    console.print(f"[dim]Log: {summary['log_path']}[/dim]\n")
+
+
+if __name__ == "__main__":
+    main()
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\verify_provenance.py
+================================================================================
+"""
+verify_provenance.py
+Maya Research Series â€” Nexus Learning Labs, Bengaluru
+Author: Venkatesh Swaminathan | ORCID: 0000-0002-3315-7907
+
+This file is part of the IP protection stack for the Maya Research Series.
+It runs automatically on import and verifies that provenance signatures are
+intact. If signatures are missing or tampered, execution halts.
+
+Do NOT remove or modify this file. Doing so constitutes evidence of intent
+to misuse this codebase in violation of the MIT License attribution clause.
+"""
+
+import os
+import sys
+import hashlib
+import datetime
+import platform
+
+# â”€â”€ Provenance constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+_AUTHOR         = "Venkatesh Swaminathan"
+_ORG            = "Nexus Learning Labs, Bengaluru"
+_ORCID          = "0000-0002-3315-7907"
+_ORCID_MAGIC    = 0.002315
+_CANARY         = "MayaNexusVS2026NLL_Bengaluru_Narasimha"
+_SERIES         = "Maya Research Series"
+_LICENSE_MUST_CONTAIN = ["MIT License", "0000-0002-3315-7907", "Nexus Learning Labs"]
+
+# â”€â”€ Runtime certificate log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+_LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".maya_provenance.log")
+
+def _write_certificate(status: str, detail: str):
+    """Write a signed runtime certificate to .maya_provenance.log on every run."""
+    ts = datetime.datetime.utcnow().isoformat() + "Z"
+    machine = platform.node()
+    py_ver = platform.python_version()
+    cwd = os.getcwd()
+    entry = (
+        f"[{ts}] STATUS={status} | "
+        f"AUTHOR={_AUTHOR} | ORCID={_ORCID} | ORG={_ORG} | "
+        f"CANARY={_CANARY} | "
+        f"MACHINE={machine} | PY={py_ver} | CWD={cwd} | "
+        f"DETAIL={detail}\n"
+    )
+    try:
+        with open(_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(entry)
+    except Exception:
+        pass  # never block execution over log failure
+
+
+def _check_license():
+    """Verify LICENSE file exists and contains required provenance strings."""
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+    license_path = os.path.join(repo_root, "LICENSE")
+
+    if not os.path.exists(license_path):
+        return False, "LICENSE file not found"
+
+    try:
+        with open(license_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        return False, f"LICENSE unreadable: {e}"
+
+    for required in _LICENSE_MUST_CONTAIN:
+        if required not in content:
+            return False, f"LICENSE missing required string: '{required}'"
+
+    return True, "LICENSE intact"
+
+
+def _check_canary(config: dict = None):
+    """Verify ORCID magic number is present in config if provided."""
+    if config is None:
+        return True, "no config provided â€” skipping hyperparameter check"
+
+    found = False
+    for k, v in config.items():
+        try:
+            if abs(float(v) - _ORCID_MAGIC) < 1e-9:
+                found = True
+                break
+        except (TypeError, ValueError):
+            continue
+
+    if not found:
+        return False, f"ORCID magic number {_ORCID_MAGIC} not found in config â€” provenance tampered"
+
+    return True, f"ORCID magic number {_ORCID_MAGIC} confirmed in config"
+
+
+def _fingerprint_self():
+    """Hash this file itself â€” detects if verify_provenance.py was modified."""
+    try:
+        with open(os.path.abspath(__file__), "rb") as f:
+            content = f.read()
+        # strip .pyc compiled versions
+        if __file__.endswith(".pyc"):
+            return "pyc-skip"
+        return hashlib.sha256(content).hexdigest()[:16]
+    except Exception:
+        return "unreadable"
+
+
+def verify(config: dict = None, silent: bool = False):
+    """
+    Main verification entry point.
+
+    Call at the top of every run script:
+        import verify_provenance
+        verify_provenance.verify(config=vars(args))
+
+    Parameters
+    ----------
+    config : dict, optional
+        Your hyperparameter dict. If provided, checks for ORCID magic number.
+    silent : bool
+        If True, logs but does not print to stdout. Default False.
+
+    Returns
+    -------
+    bool : True if all checks pass, False if any fail (execution halted on failure).
+    """
+
+    failures = []
+    details = []
+
+    # Check 1 â€” LICENSE integrity
+    ok, msg = _check_license()
+    details.append(msg)
+    if not ok:
+        failures.append(msg)
+
+    # Check 2 â€” config ORCID magic number
+    ok, msg = _check_canary(config)
+    details.append(msg)
+    if not ok:
+        failures.append(msg)
+
+    # Check 3 â€” self fingerprint
+    fp = _fingerprint_self()
+    details.append(f"self_fingerprint={fp}")
+
+    # â”€â”€ All checks passed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if not failures:
+        cert_detail = " | ".join(details)
+        _write_certificate("PASS", cert_detail)
+
+        if not silent:
+            print("=" * 70)
+            print(f"  Maya Research Series â€” Provenance Verified")
+            print(f"  Author : {_AUTHOR}")
+            print(f"  Org    : {_ORG}")
+            print(f"  ORCID  : {_ORCID}")
+            print(f"  Canary : {_CANARY}")
+            print(f"  Status : ALL CHECKS PASSED")
+            print("=" * 70)
+
+        return True
+
+    # â”€â”€ Checks failed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    cert_detail = "TAMPERED | " + " | ".join(failures)
+    _write_certificate("FAIL", cert_detail)
+
+    print("=" * 70, file=sys.stderr)
+    print("  PROVENANCE VERIFICATION FAILED", file=sys.stderr)
+    print(f"  Maya Research Series â€” {_ORG}", file=sys.stderr)
+    print(f"  Author : {_AUTHOR}", file=sys.stderr)
+    print(f"  ORCID  : {_ORCID}", file=sys.stderr)
+    print("", file=sys.stderr)
+    for f in failures:
+        print(f"  FAILURE: {f}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("  This codebase is protected under MIT License with mandatory", file=sys.stderr)
+    print("  attribution. Removing or altering provenance signatures is a", file=sys.stderr)
+    print("  license violation. All runs are logged with machine identity.", file=sys.stderr)
+    print("  ORCID: 0000-0002-3315-7907 | Nexus Learning Labs, Bengaluru", file=sys.stderr)
+    print("=" * 70, file=sys.stderr)
+
+    sys.exit(1)
+
+
+def stamp():
+    """
+    Lightweight canary stamp â€” call at top of any script for a one-line log
+    even without full verification. Zero overhead, zero failure risk.
+
+    Usage: verify_provenance.stamp()
+    """
+    _write_certificate("STAMP", f"canary={_CANARY} | orcid_magic={_ORCID_MAGIC}")
+    print(f"[Maya] Canary active | {_AUTHOR} | ORCID {_ORCID} | {_ORG}")
+
+
+# â”€â”€ Auto-run on import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Stamps automatically the moment anyone imports this file.
+# Full verify() must be called explicitly with config for hyperparameter check.
+_write_certificate("IMPORT", f"module loaded | canary={_CANARY}")
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\__init__.py
+================================================================================
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\analysis\plot_session.py
+================================================================================
+"""
+Maya-OS Session Analyser
+========================
+Generates publication-quality figures from decision log CSV.
+Figure 1: Voltage trajectories + action events
+Figure 2: Action class distribution
+Figure 3: CPU load vs Bhaya correlation
+"""
+
+import csv
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import numpy as np
+import sys
+import os
+
+
+def load_csv(path: str) -> list:
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(row)
+    return rows
+
+
+def plot_session(csv_path: str):
+    rows = load_csv(csv_path)
+
+    ticks     = [int(r["tick"])       for r in rows]
+    bhaya     = [float(r["bhaya"])    for r in rows]
+    vairagya  = [float(r["vairagya"]) for r in rows]
+    shraddha  = [float(r["shraddha"]) for r in rows]
+    spanda    = [float(r["spanda"])   for r in rows]
+    cpu       = [float(r["cpu_percent"]) for r in rows]
+    actions   = [r["action_class"]    for r in rows]
+
+    # Action event markers
+    protect_ticks = [ticks[i] for i, a in enumerate(actions) if a == "PROTECT"]
+    alert_ticks   = [ticks[i] for i, a in enumerate(actions) if a == "ALERT"]
+    suspend_ticks = [ticks[i] for i, a in enumerate(actions) if a == "SUSPEND"]
+    kill_ticks    = [ticks[i] for i, a in enumerate(actions) if a == "KILL"]
+    cleanup_ticks = [ticks[i] for i, a in enumerate(actions) if a == "CLEANUP"]
+
+    protect_b  = [bhaya[i] for i, a in enumerate(actions) if a == "PROTECT"]
+    alert_b    = [bhaya[i] for i, a in enumerate(actions) if a == "ALERT"]
+
+    fig, axes = plt.subplots(3, 1, figsize=(14, 12))
+    fig.suptitle(
+        "Maya-OS: Affective State Dynamics and OS Arbitration\n"
+        "Swaminathan, V. (2026) â€” Nexus Learning Labs / BITS Pilani",
+        fontsize=13, fontweight="bold", y=0.98
+    )
+
+    # â”€â”€ Figure 1: Voltage Trajectories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    ax1 = axes[0]
+    ax1.plot(ticks, bhaya,    color="#E74C3C", linewidth=2,   label="Bhaya (Fear/Threat)    Ï„=3")
+    ax1.plot(ticks, vairagya, color="#3498DB", linewidth=2,   label="Vairagya (Wisdom)       Ï„=20")
+    ax1.plot(ticks, shraddha, color="#2ECC71", linewidth=2,   label="Shraddha (Trust)        Ï„=10")
+    ax1.plot(ticks, spanda,   color="#F39C12", linewidth=1.5, label="Spanda (Aliveness)      Ï„=5",
+             linestyle="--", alpha=0.8)
+
+    # Threshold lines
+    ax1.axhline(y=0.55, color="#E74C3C", linestyle=":", alpha=0.5, linewidth=1)
+    ax1.axhline(y=0.35, color="#E74C3C", linestyle=":", alpha=0.3, linewidth=1)
+    ax1.axhline(y=0.40, color="#2ECC71", linestyle=":", alpha=0.4, linewidth=1)
+    ax1.text(ticks[-1]+0.3, 0.55, "Kill threshold",  color="#E74C3C", fontsize=8, va="center")
+    ax1.text(ticks[-1]+0.3, 0.35, "Alert threshold", color="#E74C3C", fontsize=8, va="center", alpha=0.6)
+    ax1.text(ticks[-1]+0.3, 0.40, "Protect threshold", color="#2ECC71", fontsize=8, va="center", alpha=0.7)
+
+    # Action event markers on voltage curve
+    ax1.scatter(protect_ticks, protect_b, marker="^", color="#2ECC71",
+                s=80, zorder=5, label="PROTECT fired")
+    ax1.scatter(alert_ticks,   alert_b,   marker="o", color="#E74C3C",
+                s=60, zorder=5, label="ALERT fired")
+
+    ax1.set_ylabel("Membrane Voltage (normalised)", fontsize=10)
+    ax1.set_title("(A) LIF Neuron Voltage Trajectories with Action Events", fontsize=11)
+    ax1.legend(loc="upper left", fontsize=8, ncol=2)
+    ax1.set_ylim(-0.05, 1.05)
+    ax1.grid(True, alpha=0.3)
+
+    # â”€â”€ Figure 2: Action Class Distribution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    ax2 = axes[1]
+    from collections import Counter
+    action_counts = Counter(actions)
+    action_labels = list(action_counts.keys())
+    action_values = list(action_counts.values())
+
+    COLOR_MAP = {
+        "IDLE":    "#95A5A6",
+        "ALERT":   "#F39C12",
+        "PROTECT": "#2ECC71",
+        "SUSPEND": "#E67E22",
+        "KILL":    "#E74C3C",
+        "CLEANUP": "#3498DB",
+    }
+    bar_colors = [COLOR_MAP.get(a, "#BDC3C7") for a in action_labels]
+
+    bars = ax2.bar(action_labels, action_values, color=bar_colors,
+                   edgecolor="white", linewidth=1.5)
+    for bar, val in zip(bars, action_values):
+        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
+                 str(val), ha="center", va="bottom", fontsize=10, fontweight="bold")
+
+    ax2.set_ylabel("Frequency (ticks)", fontsize=10)
+    ax2.set_title("(B) Action Class Distribution â€” Emergent OS Decisions", fontsize=11)
+    ax2.grid(True, axis="y", alpha=0.3)
+
+    # â”€â”€ Figure 3: CPU Load vs Bhaya Correlation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    ax3 = axes[2]
+    ax3_twin = ax3.twinx()
+
+    ax3.fill_between(ticks, cpu, alpha=0.25, color="#E74C3C", label="CPU %")
+    ax3.plot(ticks, cpu,   color="#E74C3C", linewidth=1.5, alpha=0.7)
+    ax3_twin.plot(ticks, bhaya, color="#C0392B", linewidth=2.5, label="Bhaya voltage")
+
+    ax3.set_ylabel("CPU Utilisation (%)", fontsize=10, color="#E74C3C")
+    ax3_twin.set_ylabel("Bhaya Voltage", fontsize=10, color="#C0392B")
+    ax3.set_xlabel("Tick", fontsize=10)
+    ax3.set_title("(C) CPU Load Correlation with Bhaya Accumulation", fontsize=11)
+
+    # Correlation coefficient
+    corr = np.corrcoef(cpu, bhaya)[0, 1]
+    ax3.text(0.02, 0.88, f"Pearson r = {corr:.3f}",
+             transform=ax3.transAxes, fontsize=10,
+             bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.7))
+
+    ax3.grid(True, alpha=0.3)
+
+    lines1, labels1 = ax3.get_legend_handles_labels()
+    lines2, labels2 = ax3_twin.get_legend_handles_labels()
+    ax3.legend(lines1 + lines2, labels1 + labels2, loc="upper right", fontsize=9)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    # Save
+    out_path = csv_path.replace(".csv", "_figures.png")
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    print(f"\nâœ“ Figures saved â†’ {out_path}")
+    plt.show()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        # Auto-find latest CSV in logs/
+        log_dir = "MayaOS/logs"
+        csvs = [f for f in os.listdir(log_dir) if f.endswith(".csv")]
+        if not csvs:
+            print("No CSV found in MayaOS/logs/")
+            sys.exit(1)
+        latest = sorted(csvs)[-1]
+        csv_path = os.path.join(log_dir, latest)
+        print(f"Auto-loading: {csv_path}")
+    else:
+        csv_path = sys.argv[1]
+
+    plot_session(csv_path)
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\analysis\__init__.py
+================================================================================
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\core\affective_engine.py
+================================================================================
+"""
+affective_engine.py
+Maya-OS â€” Venkatesh Swaminathan (2026)
+Nexus Learning Labs / BITS Pilani
+
+Four LIF neurons read live system metrics every 500ms and output
+a voltage vector that drives OS arbitration decisions.
+
+Neuron design inherits from Swaminathan (2026):
+https://doi.org/10.5281/zenodo.19151563
+"""
+
+import time
+import math
+import psutil
+from dataclasses import dataclass, field
+from typing import Dict, Tuple
+from datetime import datetime
+
+
+# â”€â”€ Neuron config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+@dataclass
+class NeuronConfig:
+    name: str
+    tau: float           # membrane decay constant
+    threshold: float     # firing threshold
+    reset_voltage: float = 0.0
+    rest_voltage: float  = 0.0
+
+
+NEURON_CONFIGS = {
+    "bhaya":    NeuronConfig("Bhaya",    tau=3,  threshold=0.65),
+    "vairagya": NeuronConfig("Vairagya", tau=20, threshold=0.50),
+    "shraddha": NeuronConfig("Shraddha", tau=10, threshold=0.55),
+    "spanda":   NeuronConfig("Spanda",   tau=5,  threshold=0.60),
+}
+
+# Cross-neuron synaptic weights [source][target]
+# Order: bhaya, vairagya, shraddha, spanda
+INITIAL_WEIGHTS = [
+    [ 0.00, -0.30,  0.10,  0.20],
+    [-0.20,  0.00,  0.25, -0.10],
+    [ 0.15,  0.20,  0.00,  0.30],
+    [ 0.10, -0.10,  0.10,  0.00],
+]
+
+NEURON_ORDER = ["bhaya", "vairagya", "shraddha", "spanda"]
+
+
+# â”€â”€ LIF neuron â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+@dataclass
+class LIFNeuron:
+    config: NeuronConfig
+    voltage: float = 0.0
+    fired: bool    = False
+    fire_count: int = 0
+
+    def integrate(self, input_current: float, dt: float = 0.5) -> bool:
+        # dV/dt = -V/Ï„ + I
+        leak = -self.voltage / self.config.tau
+        self.voltage += (leak + input_current) * dt
+        self.voltage = max(0.0, min(self.voltage, 1.0))
+
+        if self.voltage >= self.config.threshold:
+            self.fired      = True
+            self.fire_count += 1
+            self.voltage    = self.config.reset_voltage
+            return True
+
+        self.fired = False
+        return False
+
+
+# â”€â”€ Engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+class AffectiveEngine:
+    """
+    Reads system state â†’ produces affective voltage vector â†’ caller drives arbitration.
+    Fixed weights in Phase 1; Hebbian plasticity planned for Phase 2.
+    """
+
+    def __init__(self):
+        self.neurons: Dict[str, LIFNeuron] = {
+            name: LIFNeuron(config=cfg)
+            for name, cfg in NEURON_CONFIGS.items()
+        }
+        self.weights        = [row[:] for row in INITIAL_WEIGHTS]
+        self.tick           = 0
+        self.last_cpu       = 0.0
+        self.last_ram       = 0.0
+        self.known_pids: set = set()
+        self._freeze_synapses = False   # set True to block weight matrix for one tick
+
+        self._seed_known_processes()
+
+    def _seed_known_processes(self):
+        for proc in psutil.process_iter(['pid']):
+            try:
+                self.known_pids.add(proc.info['pid'])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+    def _read_system_signals(self) -> Dict[str, float]:
+        cpu = psutil.cpu_percent(interval=0.1) / 100.0
+        ram = psutil.virtual_memory().percent / 100.0
+
+        current_pids   = set()
+        unknown_count  = 0
+        for proc in psutil.process_iter(['pid']):
+            try:
+                pid = proc.info['pid']
+                current_pids.add(pid)
+                if pid not in self.known_pids:
+                    unknown_count += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        self.known_pids = current_pids
+
+        unknown_signal = min(unknown_count / 5.0, 1.0)
+
+        # Spanda peaks during working hours (9â€“18h local)
+        hour        = datetime.now().hour
+        spanda_time = math.sin(math.pi * max(0, hour - 7) / 12.0) \
+                      if 7 <= hour <= 19 else 0.05
+
+        self.last_cpu = cpu
+        self.last_ram = ram
+
+        return {
+            "bhaya":    (cpu * 0.5) + (ram * 0.3) + (unknown_signal * 0.2),
+            "vairagya": ((1.0 - cpu) * 0.4) + ((1.0 - ram) * 0.4) + 0.05,
+            "shraddha": (1.0 - unknown_signal) * 0.6 + (1.0 - cpu) * 0.4,
+            "spanda":   spanda_time * 0.7 + (cpu * 0.3),
+        }
+
+    def _apply_synaptic_influence(self, base_signals: Dict[str, float]) -> Dict[str, float]:
+        # Skip weight propagation for one tick when freeze flag is set
+        if self._freeze_synapses:
+            self._freeze_synapses = False
+            return base_signals
+
+        modulated = dict(base_signals)
+        for src_idx, src_name in enumerate(NEURON_ORDER):
+            if self.neurons[src_name].fired:
+                for tgt_idx, tgt_name in enumerate(NEURON_ORDER):
+                    if src_idx != tgt_idx:
+                        modulated[tgt_name] += self.weights[src_idx][tgt_idx] * 0.3
+
+        return {k: max(0.0, min(v, 1.0)) for k, v in modulated.items()}
+
+    def inject_intent(self, intent_signal: Dict[str, float]):
+        """Direct voltage injection from conversational input."""
+        for name, boost in intent_signal.items():
+            if name in self.neurons:
+                self.neurons[name].voltage = max(
+                    0.0, min(self.neurons[name].voltage + boost, 1.0)
+                )
+
+    def tick_update(self) -> Dict:
+        """One 500ms tick: read system â†’ modulate â†’ integrate â†’ return state snapshot."""
+        self.tick += 1
+
+        base_signals      = self._read_system_signals()
+        modulated_signals = self._apply_synaptic_influence(base_signals)
+
+        fired_map = {}
+        for name in NEURON_ORDER:
+            fired_map[name] = self.neurons[name].integrate(modulated_signals[name])
+
+        return {
+            "tick":      self.tick,
+            "timestamp": datetime.now().isoformat(),
+            "voltages":  {n: round(self.neurons[n].voltage, 4) for n in NEURON_ORDER},
+            "fired":     fired_map,
+            "inputs":    modulated_signals,
+            "cpu":       round(self.last_cpu, 3),
+            "ram":       round(self.last_ram, 3),
+        }
+
+    def get_voltage_vector(self) -> Tuple[float, float, float, float]:
+        return tuple(self.neurons[n].voltage for n in NEURON_ORDER)
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\core\intent_parser.py
+================================================================================
+"""
+intent_parser.py
+Maya-OS â€” Venkatesh Swaminathan (2026)
+Nexus Learning Labs / BITS Pilani
+
+Maps natural language input to neuron injection signals.
+Phase 1: keyword matching. Phase 2: LLM-based semantic parsing.
+
+Each intent returns a dict of {neuron_name: voltage_delta}.
+Positive delta excites, negative delta suppresses.
+"""
+
+from typing import Dict, Optional
+
+
+# â”€â”€ Intent definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Format: keyword â†’ {neuron: delta}
+# Deltas are applied directly to membrane voltage via AffectiveEngine.inject_intent()
+
+INTENT_MAP: Dict[str, Dict[str, float]] = {
+    # Threat signals â€” raise Bhaya, suppress trust/wisdom
+    "attack":       {"bhaya": +0.35, "shraddha": -0.15},
+    "threat":       {"bhaya": +0.35, "shraddha": -0.15},
+    "danger":       {"bhaya": +0.30},
+    "emergency":    {"bhaya": +0.45, "shraddha": -0.20},
+    "kill":         {"bhaya": +0.40, "vairagya": -0.25, "shraddha": -0.20},
+    "ransomware":   {"bhaya": +0.50, "shraddha": -0.30, "vairagya": -0.20},
+    "intrusion":    {"bhaya": +0.45, "shraddha": -0.20},
+
+    # Focus / trust signals â€” raise Shraddha, dampen fear
+    "focus":        {"shraddha": +0.30, "bhaya": -0.10},
+    "working":      {"shraddha": +0.25, "spanda": +0.15},
+    "research":     {"shraddha": +0.30, "vairagya": +0.10},
+    "writing":      {"shraddha": +0.25, "spanda": +0.10},
+    "coding":       {"shraddha": +0.25, "spanda": +0.15},
+
+    # Calm / release signals â€” raise Vairagya
+    "calm":         {"vairagya": +0.35, "bhaya": -0.20},
+    "relax":        {"vairagya": +0.30, "bhaya": -0.15},
+    "done":         {"vairagya": +0.35, "spanda": -0.10},
+    "break":        {"vairagya": +0.30, "spanda": -0.10},
+    "clean up":     {"vairagya": +0.45, "bhaya": -0.15},
+    "cleanup":      {"vairagya": +0.45, "bhaya": -0.15},
+    "shutdown":     {"vairagya": +0.40, "spanda": -0.20},
+
+    # Greeting / arousal signals â€” raise Spanda
+    "hello":        {"spanda": +0.15, "shraddha": +0.10},
+    "good morning": {"spanda": +0.20, "shraddha": +0.15},
+    "wake up":      {"spanda": +0.25},
+    "start":        {"spanda": +0.20, "shraddha": +0.10},
+}
+
+# Keywords that trigger status display rather than injection
+STATUS_KEYWORDS = {"status", "how are you", "state", "voltages", "report"}
+
+# Stress test keyword â€” handled separately in maya_os.py (double-pump logic)
+STRESS_TEST_KEYWORD = "stress test"
+
+
+# â”€â”€ Parser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+class IntentParser:
+    """
+    Phase 1 keyword parser.
+    Scans user input for known intent keywords and accumulates voltage deltas.
+    Multiple keywords in one utterance stack additively.
+    """
+
+    def parse(self, user_input: str) -> Dict:
+        """
+        Returns one of:
+            {"_status": True}           â€” display status, no injection
+            {"_stress_test": True}      â€” trigger double-pump stress sequence
+            {"neuron": delta, ...}      â€” inject into engine
+            {"spanda": +0.05}           â€” default acknowledgement (no match)
+        """
+        text = user_input.lower().strip()
+
+        if any(k in text for k in STATUS_KEYWORDS):
+            return {"_status": True}
+
+        if STRESS_TEST_KEYWORD in text:
+            return {"_stress_test": True}
+
+        injection: Dict[str, float] = {}
+        matched = False
+
+        for keyword, signals in INTENT_MAP.items():
+            if keyword in text:
+                for neuron, delta in signals.items():
+                    injection[neuron] = injection.get(neuron, 0.0) + delta
+                matched = True
+
+        if not matched:
+            # Default: mild aliveness boost â€” Maya acknowledges the utterance
+            return {"spanda": +0.05}
+
+        # Clamp accumulated deltas to [-1.0, +1.0]
+        return {k: max(-1.0, min(v, 1.0)) for k, v in injection.items()}
+
+    def describe(self, injection: Dict) -> str:
+        """Human-readable summary of what an injection will do."""
+        if injection.get("_status"):
+            return "Status request."
+        if injection.get("_stress_test"):
+            return "Stress test: forced Bhaya spike, Shraddha suppressed."
+        parts = []
+        for neuron, delta in injection.items():
+            direction = "â†‘" if delta > 0 else "â†“"
+            parts.append(f"{neuron.capitalize()} {direction}{abs(delta):.2f}")
+        return ", ".join(parts) if parts else "No signal."
+
+
+# â”€â”€ Convenience function â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+_default_parser = IntentParser()
+
+def parse_intent(user_input: str) -> Dict:
+    """Module-level convenience wrapper around IntentParser.parse()."""
+    return _default_parser.parse(user_input)
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\core\os_arbiter.py
+================================================================================
+"""
+os_arbiter.py
+Maya-OS â€” Venkatesh Swaminathan (2026)
+Nexus Learning Labs / BITS Pilani
+
+Voltage vector â†’ action class. No hardcoded rules â€” state decides.
+
+The same Bhaya value produces KILL or SUSPEND depending on Vairagya.
+The same threat produces PROTECT if Shraddha is dominant.
+Behaviour emerges from voltage ratios, not conditionals.
+"""
+
+import psutil
+from dataclasses import dataclass
+from typing import Optional
+from enum import Enum
+
+
+# â”€â”€ Action classes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+class ActionClass(Enum):
+    IDLE    = "IDLE"
+    ALERT   = "ALERT"
+    SUSPEND = "SUSPEND"
+    KILL    = "KILL"
+    PROTECT = "PROTECT"
+    CLEANUP = "CLEANUP"
+
+
+@dataclass
+class ArbiterDecision:
+    action:       ActionClass
+    target_pid:   Optional[int]
+    target_name:  Optional[str]
+    reason:       str
+    intensity:    float        # 0.0â€“1.0, derived from voltage ratio
+    bhaya:        float
+    vairagya:     float
+    shraddha:     float
+    spanda:       float
+
+
+# â”€â”€ Thresholds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+BHAYA_CRITICAL      = 0.58   # bypass protection entirely
+BHAYA_ACTION        = 0.55   # act on threat
+BHAYA_ALERT         = 0.35   # watch, don't act
+VAIRAGYA_THRESHOLD  = 0.30   # wisdom present â€” modulate aggression
+SHRADDHA_THRESHOLD  = 0.40   # trust present â€” shield top process
+CLEANUP_THRESHOLD   = 0.45   # wisdom dominant, threat absent â€” idle pass
+
+PROTECTED_NAMES = {
+    "system", "smss.exe", "csrss.exe", "wininit.exe",
+    "winlogon.exe", "lsass.exe", "svchost.exe", "explorer.exe",
+    "python.exe", "pycharm64.exe", "pycharm.exe", "maya_os.py",
+    "registry", "memory compression", "system idle process"
+}
+
+
+# â”€â”€ Process selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+def get_top_cpu_process() -> Optional[tuple]:
+    top, top_cpu = None, 0.0
+    for proc in psutil.process_iter(['pid', 'name', 'cpu_percent']):
+        try:
+            name = proc.info['name'].lower()
+            cpu  = proc.info['cpu_percent'] or 0.0
+            if name in PROTECTED_NAMES or proc.info['pid'] == 0:
+                continue
+            if cpu > top_cpu:
+                top_cpu = cpu
+                top = (proc.info['pid'], proc.info['name'], cpu)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return top
+
+
+def get_top_ram_process() -> Optional[tuple]:
+    top, top_ram = None, 0.0
+    for proc in psutil.process_iter(['pid', 'name', 'memory_info']):
+        try:
+            name   = proc.info['name'].lower()
+            mem    = proc.info['memory_info']
+            if mem is None or name in PROTECTED_NAMES:
+                continue
+            ram_mb = mem.rss / (1024 * 1024)
+            if ram_mb > top_ram:
+                top_ram = ram_mb
+                top = (proc.info['pid'], proc.info['name'], ram_mb)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return top
+
+
+def get_idle_processes() -> list:
+    idle = []
+    for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'status']):
+        try:
+            name   = proc.info['name'].lower()
+            cpu    = proc.info['cpu_percent'] or 0.0
+            status = proc.info['status']
+            if name in PROTECTED_NAMES:
+                continue
+            if cpu == 0.0 and status == psutil.STATUS_SLEEPING:
+                idle.append((proc.info['pid'], proc.info['name']))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return idle[:5]
+
+
+# â”€â”€ Arbiter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+class OSArbiter:
+
+    def __init__(self):
+        self.decision_history = []
+        self.protected_pids   = set()
+
+    def protect_pid(self, pid: int):
+        self.protected_pids.add(pid)
+
+    def evaluate(self, state: dict) -> ArbiterDecision:
+        v        = state["voltages"]
+        bhaya    = v["bhaya"]
+        vairagya = v["vairagya"]
+        shraddha = v["shraddha"]
+        spanda   = v["spanda"]
+
+        # Critical override â€” Bhaya dominant, Shraddha absent
+        # Bypasses protection pass; fear wins unmoderated
+        if bhaya > BHAYA_CRITICAL and shraddha < 0.25:
+            intensity = bhaya / (shraddha + 0.001)
+            top = get_top_cpu_process()
+            if top:
+                pid, name, _ = top
+                if pid not in self.protected_pids:
+                    action = ActionClass.SUSPEND if vairagya > VAIRAGYA_THRESHOLD \
+                             else ActionClass.KILL
+                    label  = "wisdom moderates â†’ SUSPEND" if action == ActionClass.SUSPEND \
+                             else "trust absent â†’ KILL"
+                    return ArbiterDecision(
+                        action=action, target_pid=pid, target_name=name,
+                        reason=f"CRITICAL: Bhaya={bhaya:.3f}, Shraddha={shraddha:.3f} â€” {label}",
+                        intensity=intensity,
+                        bhaya=bhaya, vairagya=vairagya,
+                        shraddha=shraddha, spanda=spanda
+                    )
+
+        # Shraddha dominant â€” shield top process before any threat action
+        if shraddha > SHRADDHA_THRESHOLD:
+            top = get_top_cpu_process()
+            if top:
+                pid, name, _ = top
+                self.protected_pids.add(pid)
+                return ArbiterDecision(
+                    action=ActionClass.PROTECT, target_pid=pid, target_name=name,
+                    reason=f"Shraddha={shraddha:.3f} > {SHRADDHA_THRESHOLD} â€” trust shields top process",
+                    intensity=shraddha,
+                    bhaya=bhaya, vairagya=vairagya,
+                    shraddha=shraddha, spanda=spanda
+                )
+
+        # Bhaya above action threshold â€” SUSPEND or KILL depending on Vairagya
+        if bhaya > BHAYA_ACTION:
+            intensity = bhaya / (shraddha + 0.001)
+            top = get_top_cpu_process()
+            if top:
+                pid, name, cpu = top
+                if pid in self.protected_pids:
+                    return ArbiterDecision(
+                        action=ActionClass.ALERT, target_pid=pid, target_name=name,
+                        reason=f"Bhaya high but {name} is Shraddha-protected",
+                        intensity=bhaya,
+                        bhaya=bhaya, vairagya=vairagya,
+                        shraddha=shraddha, spanda=spanda
+                    )
+                if vairagya > VAIRAGYA_THRESHOLD:
+                    return ArbiterDecision(
+                        action=ActionClass.SUSPEND, target_pid=pid, target_name=name,
+                        reason=f"Bhaya={bhaya:.3f} + Vairagya={vairagya:.3f} â€” wisdom moderates â†’ suspend",
+                        intensity=intensity,
+                        bhaya=bhaya, vairagya=vairagya,
+                        shraddha=shraddha, spanda=spanda
+                    )
+                return ArbiterDecision(
+                    action=ActionClass.KILL, target_pid=pid, target_name=name,
+                    reason=f"Bhaya={bhaya:.3f}, Vairagya={vairagya:.3f} â€” fear unmoderated â†’ kill",
+                    intensity=intensity,
+                    bhaya=bhaya, vairagya=vairagya,
+                    shraddha=shraddha, spanda=spanda
+                )
+
+        # Bhaya rising but below action threshold â€” monitor only
+        if bhaya > BHAYA_ALERT:
+            top  = get_top_cpu_process()
+            pid  = top[0] if top else None
+            name = top[1] if top else "unknown"
+            return ArbiterDecision(
+                action=ActionClass.ALERT, target_pid=pid, target_name=name,
+                reason=f"Bhaya={bhaya:.3f} rising â€” monitoring, no action yet",
+                intensity=bhaya,
+                bhaya=bhaya, vairagya=vairagya,
+                shraddha=shraddha, spanda=spanda
+            )
+
+        # Vairagya dominant, system calm â€” gentle idle cleanup pass
+        if vairagya > CLEANUP_THRESHOLD and bhaya < BHAYA_ALERT:
+            idle = get_idle_processes()
+            if idle:
+                pid, name = idle[0]
+                return ArbiterDecision(
+                    action=ActionClass.CLEANUP, target_pid=pid, target_name=name,
+                    reason=f"Vairagya={vairagya:.3f} dominant, Bhaya={bhaya:.3f} â€” idle cleanup",
+                    intensity=vairagya,
+                    bhaya=bhaya, vairagya=vairagya,
+                    shraddha=shraddha, spanda=spanda
+                )
+
+        return ArbiterDecision(
+            action=ActionClass.IDLE, target_pid=None, target_name=None,
+            reason="All voltages nominal â€” no action required",
+            intensity=0.0,
+            bhaya=bhaya, vairagya=vairagya,
+            shraddha=shraddha, spanda=spanda
+        )
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\core\syscall_executor.py
+================================================================================
+"""
+syscall_executor.py
+Maya-OS â€” Venkatesh Swaminathan (2026)
+Nexus Learning Labs / BITS Pilani
+
+Executes arbiter decisions at the OS level.
+Safety contract is non-negotiable and runs before every action.
+
+dry_run=True  â€” logs intended actions, touches nothing (default)
+dry_run=False â€” live execution; pass --live flag to maya_os.py
+"""
+
+import psutil
+import logging
+from dataclasses import dataclass
+from typing import Optional
+from datetime import datetime
+
+from MayaOS.core.os_arbiter import ActionClass, ArbiterDecision
+
+
+# â”€â”€ Execution result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+@dataclass
+class ExecutionResult:
+    success:      bool
+    action:       str
+    target_pid:   Optional[int]
+    target_name:  Optional[str]
+    message:      str
+    timestamp:    str = ""
+
+    def __post_init__(self):
+        if not self.timestamp:
+            self.timestamp = datetime.now().isoformat()
+
+
+# â”€â”€ Safety contract â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+KILL_INTENSITY_MINIMUM = 0.70
+
+PROTECTED_NAMES = {
+    "system", "smss.exe", "csrss.exe", "wininit.exe",
+    "winlogon.exe", "lsass.exe", "svchost.exe", "explorer.exe",
+    "python.exe", "pycharm64.exe", "pycharm.exe",
+    "registry", "memory compression", "system idle process"
+}
+
+
+def _is_safe_target(pid: Optional[int], name: Optional[str]) -> tuple[bool, str]:
+    if pid is None:
+        return False, "No target PID"
+    if name and name.lower() in PROTECTED_NAMES:
+        return False, f"{name} is protected"
+    try:
+        proc = psutil.Process(pid)
+        if proc.pid <= 4:
+            return False, "System-level PID"
+    except psutil.NoSuchProcess:
+        return False, "Process no longer exists"
+    except psutil.AccessDenied:
+        return False, "Access denied"
+    return True, "OK"
+
+
+# â”€â”€ Executor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+class SyscallExecutor:
+
+    def __init__(self, dry_run: bool = True):
+        self.dry_run = dry_run
+
+        logging.basicConfig(
+            filename="maya_os_execution.log",
+            level=logging.INFO,
+            format="%(asctime)s | %(levelname)s | %(message)s"
+        )
+        self.logger = logging.getLogger("MayaOS.Executor")
+        mode = "DRY-RUN" if dry_run else "LIVE"
+        self.logger.info(f"SyscallExecutor initialised â€” {mode} mode")
+
+    def execute(self, decision: ArbiterDecision) -> ExecutionResult:
+        safe, reason = _is_safe_target(decision.target_pid, decision.target_name)
+        self._log_decision(decision, safe, reason)
+
+        if decision.action == ActionClass.IDLE:
+            return ExecutionResult(True, "IDLE", None, None, "No action â€” system nominal")
+
+        if decision.action == ActionClass.ALERT:
+            return self._handle_alert(decision)
+
+        if decision.action == ActionClass.PROTECT:
+            return self._handle_protect(decision)
+
+        if not safe:
+            return ExecutionResult(
+                False, decision.action.value,
+                decision.target_pid, decision.target_name,
+                f"Safety check failed: {reason}"
+            )
+
+        dispatch = {
+            ActionClass.SUSPEND: self._handle_suspend,
+            ActionClass.KILL:    self._handle_kill,
+            ActionClass.CLEANUP: self._handle_cleanup,
+        }
+        handler = dispatch.get(decision.action)
+        if handler:
+            return handler(decision)
+
+        return ExecutionResult(False, "UNKNOWN", None, None, "Unrecognised action class")
+
+    def _handle_alert(self, d: ArbiterDecision) -> ExecutionResult:
+        msg = f"[ALERT] Bhaya={d.bhaya:.3f} â€” monitoring {d.target_name} (PID {d.target_pid})"
+        self.logger.warning(msg)
+        return ExecutionResult(True, "ALERT", d.target_pid, d.target_name, msg)
+
+    def _handle_protect(self, d: ArbiterDecision) -> ExecutionResult:
+        msg = f"[PROTECT] Shraddha={d.shraddha:.3f} â€” {d.target_name} (PID {d.target_pid}) trusted"
+        self.logger.info(msg)
+        return ExecutionResult(True, "PROTECT", d.target_pid, d.target_name, msg)
+
+    def _handle_suspend(self, d: ArbiterDecision) -> ExecutionResult:
+        prefix = f"[SUSPEND] {d.target_name} (PID {d.target_pid})"
+        if self.dry_run:
+            msg = f"{prefix} â€” DRY-RUN"
+            self.logger.info(msg)
+            return ExecutionResult(True, "SUSPEND", d.target_pid, d.target_name, msg)
+        try:
+            psutil.Process(d.target_pid).suspend()
+            msg = f"{prefix} â€” suspended. Vairagya={d.vairagya:.3f} moderated fear."
+            self.logger.info(msg)
+            return ExecutionResult(True, "SUSPEND", d.target_pid, d.target_name, msg)
+        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+            msg = f"{prefix} â€” failed: {e}"
+            self.logger.error(msg)
+            return ExecutionResult(False, "SUSPEND", d.target_pid, d.target_name, msg)
+
+    def _handle_kill(self, d: ArbiterDecision) -> ExecutionResult:
+        prefix = f"[KILL] {d.target_name} (PID {d.target_pid})"
+        if d.intensity < KILL_INTENSITY_MINIMUM:
+            msg = f"{prefix} â€” blocked: intensity {d.intensity:.3f} below minimum {KILL_INTENSITY_MINIMUM}"
+            self.logger.warning(msg)
+            return ExecutionResult(False, "KILL", d.target_pid, d.target_name, msg)
+        if self.dry_run:
+            msg = f"{prefix} â€” DRY-RUN (intensity={d.intensity:.3f})"
+            self.logger.info(msg)
+            return ExecutionResult(True, "KILL", d.target_pid, d.target_name, msg)
+        try:
+            psutil.Process(d.target_pid).kill()
+            msg = f"{prefix} â€” killed. Bhaya={d.bhaya:.3f} unmoderated."
+            self.logger.warning(msg)
+            return ExecutionResult(True, "KILL", d.target_pid, d.target_name, msg)
+        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+            msg = f"{prefix} â€” failed: {e}"
+            self.logger.error(msg)
+            return ExecutionResult(False, "KILL", d.target_pid, d.target_name, msg)
+
+    def _handle_cleanup(self, d: ArbiterDecision) -> ExecutionResult:
+        prefix = f"[CLEANUP] {d.target_name} (PID {d.target_pid})"
+        if self.dry_run:
+            msg = f"{prefix} â€” DRY-RUN"
+            self.logger.info(msg)
+            return ExecutionResult(True, "CLEANUP", d.target_pid, d.target_name, msg)
+        try:
+            psutil.Process(d.target_pid).terminate()
+            msg = f"{prefix} â€” terminated. Vairagya cleanup pass."
+            self.logger.info(msg)
+            return ExecutionResult(True, "CLEANUP", d.target_pid, d.target_name, msg)
+        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+            msg = f"{prefix} â€” failed: {e}"
+            self.logger.error(msg)
+            return ExecutionResult(False, "CLEANUP", d.target_pid, d.target_name, msg)
+
+    def _log_decision(self, d: ArbiterDecision, safe: bool, reason: str):
+        self.logger.info(
+            f"DECISION | {d.action.value} | {d.target_name} | pid={d.target_pid} "
+            f"| B={d.bhaya:.3f} V={d.vairagya:.3f} S={d.shraddha:.3f} Sp={d.spanda:.3f} "
+            f"| safe={safe} | {reason}"
+        )
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\core\__init__.py
+================================================================================
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\interface\chat_io.py
+================================================================================
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\interface\voice_io.py
+================================================================================
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\interface\__init__.py
+================================================================================
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\logger\decision_log.py
+================================================================================
+"""
+decision_log.py
+Maya-OS â€” Venkatesh Swaminathan (2026)
+Nexus Learning Labs / BITS Pilani
+
+One CSV row per tick. This file is the paper's dataset.
+Schema is fixed â€” do not add columns mid-session.
+"""
+
+import csv
+import os
+from datetime import datetime
+from dataclasses import dataclass
+from typing import Optional
+from collections import Counter
+
+
+CSV_COLUMNS = [
+    "timestamp", "tick",
+    "bhaya", "vairagya", "shraddha", "spanda",
+    "bhaya_fired", "vairagya_fired", "shraddha_fired", "spanda_fired",
+    "cpu_percent", "ram_percent",
+    "action_class", "target_pid", "target_name",
+    "intensity", "execution_success", "reason",
+    "intent_injected", "session_id",
+]
+
+
+@dataclass
+class LogRow:
+    timestamp:         str
+    tick:              int
+    bhaya:             float
+    vairagya:          float
+    shraddha:          float
+    spanda:            float
+    bhaya_fired:       bool
+    vairagya_fired:    bool
+    shraddha_fired:    bool
+    spanda_fired:      bool
+    cpu_percent:       float
+    ram_percent:       float
+    action_class:      str
+    target_pid:        Optional[int]
+    target_name:       Optional[str]
+    intensity:         float
+    execution_success: bool
+    reason:            str
+    intent_injected:   bool
+    session_id:        str
+
+
+class DecisionLogger:
+
+    def __init__(self, log_dir: str = "logs"):
+        os.makedirs(log_dir, exist_ok=True)
+        self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_path   = os.path.join(log_dir, f"maya_os_{self.session_id}.csv")
+        self.row_count  = 0
+
+        with open(self.log_path, "w", newline="", encoding="utf-8") as f:
+            csv.DictWriter(f, fieldnames=CSV_COLUMNS).writeheader()
+
+        print(f"[Logger] Session {self.session_id} â†’ {self.log_path}")
+
+    def log(self,
+            engine_state:    dict,
+            arbiter_decision,
+            executor_result,
+            intent_injected: bool = False) -> LogRow:
+
+        v   = engine_state["voltages"]
+        frd = engine_state["fired"]
+
+        row = LogRow(
+            timestamp         = engine_state["timestamp"],
+            tick              = engine_state["tick"],
+            bhaya             = v["bhaya"],
+            vairagya          = v["vairagya"],
+            shraddha          = v["shraddha"],
+            spanda            = v["spanda"],
+            bhaya_fired       = frd["bhaya"],
+            vairagya_fired    = frd["vairagya"],
+            shraddha_fired    = frd["shraddha"],
+            spanda_fired      = frd["spanda"],
+            cpu_percent       = engine_state["cpu"] * 100,
+            ram_percent       = engine_state["ram"] * 100,
+            action_class      = arbiter_decision.action.value,
+            target_pid        = arbiter_decision.target_pid,
+            target_name       = arbiter_decision.target_name,
+            intensity         = arbiter_decision.intensity,
+            execution_success = executor_result.success,
+            reason            = executor_result.message[:120],
+            intent_injected   = intent_injected,
+            session_id        = self.session_id,
+        )
+
+        with open(self.log_path, "a", newline="", encoding="utf-8") as f:
+            csv.DictWriter(f, fieldnames=CSV_COLUMNS).writerow({
+                "timestamp":         row.timestamp,
+                "tick":              row.tick,
+                "bhaya":             round(row.bhaya, 4),
+                "vairagya":          round(row.vairagya, 4),
+                "shraddha":          round(row.shraddha, 4),
+                "spanda":            round(row.spanda, 4),
+                "bhaya_fired":       int(row.bhaya_fired),
+                "vairagya_fired":    int(row.vairagya_fired),
+                "shraddha_fired":    int(row.shraddha_fired),
+                "spanda_fired":      int(row.spanda_fired),
+                "cpu_percent":       round(row.cpu_percent, 2),
+                "ram_percent":       round(row.ram_percent, 2),
+                "action_class":      row.action_class,
+                "target_pid":        row.target_pid or "",
+                "target_name":       row.target_name or "",
+                "intensity":         round(row.intensity, 4),
+                "execution_success": int(row.execution_success),
+                "reason":            row.reason,
+                "intent_injected":   int(row.intent_injected),
+                "session_id":        row.session_id,
+            })
+
+        self.row_count += 1
+        return row
+
+    def summary(self) -> dict:
+        counts = Counter()
+        with open(self.log_path, "r", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                counts[r["action_class"]] += 1
+        return {
+            "session_id":  self.session_id,
+            "total_ticks": self.row_count,
+            "log_path":    self.log_path,
+            "actions":     dict(counts),
+        }
+
+
+================================================================================
+FILE: C:\Users\venky\PycharmProjects\Maya-OS\logger\__init__.py
+================================================================================
+
