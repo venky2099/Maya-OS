@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 *.pyo
 logs/maya_os_execution.log
+
+# Added by fix_all_repos.py
+*.jsonl
+*.csv
+.env
+.maya_provenance.log

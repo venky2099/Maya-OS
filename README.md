@@ -200,3 +200,6 @@ All experimental results in the paper were collected in dry-run mode.
 ---
 
 *Nexus Learning Labs · Bengaluru, India · 2026*
+
+---
+**Author:** Venkatesh Swaminathan · ORCID: [0000-0002-3315-7907](https://orcid.org/0000-0002-3315-7907) · Nexus Learning Labs, Bengaluru
